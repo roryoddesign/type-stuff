@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import Head from 'next/head';
 
 const SOURCE_META = {
@@ -9,6 +9,28 @@ const SOURCE_META = {
   'Inline':         { color: '#9d1f6a', bg: '#fce8f4', label: 'Inline'       },
 };
 
+function normalize(name) {
+  return (name || '').toLowerCase().replace(/['"]/g, '').trim();
+}
+
+function purveyorLinks(font) {
+  const q = encodeURIComponent(font.name);
+  const plus = font.name.replace(/ /g, '+');
+  const links = [];
+
+  if (font.sources.includes('Google Fonts')) {
+    links.push({ label: 'Google Fonts', href: `https://fonts.google.com/specimen/${plus}` });
+  } else {
+    links.push({ label: 'Google Fonts', href: `https://fonts.google.com/?query=${q}` });
+  }
+  links.push({ label: 'Adobe Fonts',   href: `https://fonts.adobe.com/search?query=${q}` });
+  links.push({ label: 'MyFonts',       href: `https://www.myfonts.com/collections/search?query=${q}` });
+  links.push({ label: 'Fontshare',     href: `https://www.fontshare.com/?q=${q}` });
+  links.push({ label: 'Fonts in Use',  href: `https://fontsinuse.com/search/global/${q}` });
+
+  return links;
+}
+
 function Badge({ source }) {
   const meta = SOURCE_META[source] || { color: '#666', bg: '#eee', label: source };
   return (
@@ -17,7 +39,7 @@ function Badge({ source }) {
       fontWeight: 700,
       letterSpacing: '0.1em',
       textTransform: 'uppercase',
-      padding: '3px 7px',
+      padding: '2px 6px',
       borderRadius: '2px',
       background: meta.bg,
       color: meta.color,
@@ -27,33 +49,65 @@ function Badge({ source }) {
   );
 }
 
-function FontCard({ font, index }) {
+function FontModule({ font, index, isHovered, isPinned, onClick }) {
+  const links = useMemo(() => purveyorLinks(font), [font]);
+  const expanded = isPinned;
+
+  const borderColor = isPinned
+    ? '#1a1a1a'
+    : isHovered
+    ? '#c9933a'
+    : '#e4ddd2';
+  const bg = isPinned ? '#fffaf0' : isHovered ? '#fdf6e8' : '#fff';
+
   return (
-    <div style={{
-      background: '#fff',
-      border: '1.5px solid #e4ddd2',
-      borderRadius: '6px',
-      padding: '20px 20px 16px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '10px',
-      animation: 'fadeUp 0.3s ease both',
-      animationDelay: `${index * 50}ms`,
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        background: bg,
+        border: `1.5px solid ${borderColor}`,
+        borderRadius: '5px',
+        padding: '14px 14px 12px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        cursor: 'pointer',
+        transition: 'border-color 0.12s, background 0.12s',
+        animation: 'fadeUp 0.3s ease both',
+        animationDelay: `${index * 40}ms`,
+      }}
+    >
       <div style={{
-        fontSize: '10px',
-        color: '#c0b8ae',
-        fontWeight: 700,
-        letterSpacing: '0.1em',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'baseline',
       }}>
-        {String(index + 1).padStart(2, '0')}
+        <div style={{
+          fontSize: '9px',
+          color: '#c0b8ae',
+          fontWeight: 700,
+          letterSpacing: '0.1em',
+        }}>
+          {String(index + 1).padStart(2, '0')}
+        </div>
+        {isPinned && (
+          <div style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: '#c9933a',
+          }}>
+            ● pinned
+          </div>
+        )}
       </div>
 
       <div style={{
-        fontSize: 'clamp(18px, 4vw, 26px)',
+        fontSize: 'clamp(16px, 2.2vw, 20px)',
         fontWeight: 700,
-        letterSpacing: '-0.025em',
-        lineHeight: 1.05,
+        letterSpacing: '-0.02em',
+        lineHeight: 1.1,
         color: '#1a1a1a',
         fontFamily: `"${font.name}", sans-serif`,
         wordBreak: 'break-word',
@@ -61,25 +115,52 @@ function FontCard({ font, index }) {
         {font.name}
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
         {font.sources.map(src => <Badge key={src} source={src} />)}
-        {font.sources.includes('Google Fonts') && (
-          <a
-            href={`https://fonts.google.com/specimen/${font.name.replace(/ /g, '+')}`}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              marginLeft: 'auto',
-              fontSize: '11px',
-              color: '#b0a898',
-              textDecoration: 'none',
-              fontWeight: 600,
-            }}
-          >
-            ↗ GF
-          </a>
-        )}
       </div>
+
+      {expanded && (
+        <div style={{
+          marginTop: '4px',
+          paddingTop: '10px',
+          borderTop: '1px dashed #e4ddd2',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+        }}>
+          <div style={{
+            fontSize: '9px',
+            color: '#b0a898',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            marginBottom: '2px',
+          }}>
+            Find on
+          </div>
+          {links.map(link => (
+            <a
+              key={link.label}
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              onClick={e => e.stopPropagation()}
+              style={{
+                fontSize: '12px',
+                color: '#1a1a1a',
+                textDecoration: 'none',
+                padding: '4px 0',
+                borderBottom: '1px solid #f0ebe0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span>{link.label}</span>
+              <span style={{ color: '#b0a898', fontSize: '11px' }}>↗</span>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -90,7 +171,36 @@ export default function Home() {
   const [fonts, setFonts] = useState([]);
   const [scannedUrl, setScannedUrl] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [hoveredFont, setHoveredFont] = useState(null);
+  const [pinnedFont, setPinnedFont] = useState(null);
   const inputRef = useRef(null);
+
+  // Listen for inspector postMessages from the proxied iframe
+  useEffect(() => {
+    function onMessage(e) {
+      const data = e.data;
+      if (!data || data.source !== 'typestuff-inspector') return;
+      if (data.type === 'hover') setHoveredFont(data.font);
+      else if (data.type === 'leave') setHoveredFont(null);
+      else if (data.type === 'pin') {
+        setPinnedFont(data.font);
+        setHoveredFont(data.font);
+      }
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  // Auto-scroll pinned/hovered module into view in the sidebar
+  useEffect(() => {
+    const target = pinnedFont || hoveredFont;
+    if (!target) return;
+    const norm = normalize(target);
+    const idx = fonts.findIndex(f => normalize(f.name) === norm || normalize(f.name).includes(norm) || norm.includes(normalize(f.name)));
+    if (idx === -1) return;
+    const el = document.querySelector(`[data-font-idx="${idx}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [pinnedFont, hoveredFont, fonts]);
 
   const scan = async () => {
     const target = url.trim();
@@ -99,14 +209,14 @@ export default function Home() {
     setStatus('loading');
     setFonts([]);
     setErrorMsg('');
+    setPinnedFont(null);
+    setHoveredFont(null);
     setScannedUrl(target);
 
     try {
       const res = await fetch(`/api/scan?url=${encodeURIComponent(target)}`);
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.error || 'Scan failed');
-
       setFonts(data.fonts);
       setStatus('done');
     } catch (e) {
@@ -122,271 +232,334 @@ export default function Home() {
     setFonts([]);
     setUrl('');
     setScannedUrl('');
+    setPinnedFont(null);
+    setHoveredFont(null);
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
+  const matches = (fontName, target) => {
+    if (!target) return false;
+    const a = normalize(fontName);
+    const b = normalize(target);
+    return a === b || a.includes(b) || b.includes(a);
+  };
+
+  const proxyUrl = scannedUrl
+    ? `/api/proxy?url=${encodeURIComponent(scannedUrl)}`
+    : '';
+
+  // ─── Landing state ────────────────────────────────────────────────
+  if (status === 'idle') {
+    return (
+      <>
+        <Head>
+          <title>type stuff.</title>
+          <meta name="description" content="Paste a URL. Get the fonts. No devtools needed." />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+        </Head>
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '40px 24px',
+        }}>
+          <div style={{ maxWidth: '660px', width: '100%' }}>
+            <h1 style={{
+              fontSize: 'clamp(56px, 12vw, 108px)',
+              fontWeight: 900,
+              letterSpacing: '-0.045em',
+              lineHeight: 0.88,
+              textTransform: 'lowercase',
+            }}>
+              type<br />
+              <span style={{ color: '#c9933a' }}>stuff.</span>
+            </h1>
+            <p style={{
+              marginTop: '14px',
+              fontSize: '13px',
+              color: '#9a9080',
+              letterSpacing: '0.02em',
+            }}>
+              Paste a URL. Get the fonts. Hover the preview to inspect.
+            </p>
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '32px' }}>
+              <input
+                ref={inputRef}
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                onKeyDown={handleKey}
+                placeholder="e.g. are.na or tracksmith.com"
+                autoFocus
+                style={{
+                  flex: 1,
+                  background: '#fff',
+                  border: '1.5px solid #d0c8bc',
+                  borderRadius: '4px',
+                  padding: '13px 16px',
+                  fontSize: '15px',
+                  color: '#1a1a1a',
+                  fontFamily: 'inherit',
+                }}
+              />
+              <button
+                onClick={scan}
+                style={{
+                  background: '#1a1a1a',
+                  color: '#f4efe6',
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '13px 22px',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  fontFamily: 'inherit',
+                  letterSpacing: '0.03em',
+                  cursor: 'pointer',
+                }}
+              >
+                scan →
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── Working state (loading / done / error) ───────────────────────
   return (
     <>
       <Head>
-        <title>type stuff.</title>
-        <meta name="description" content="Paste a URL. Get the fonts. No devtools needed." />
+        <title>{scannedUrl} — type stuff.</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta property="og:title" content="type stuff." />
-        <meta property="og:description" content="Paste a URL. Get the fonts." />
-        <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-
-        {/* ── Header ── */}
+      <div style={{
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+        {/* ── Top bar ── */}
         <header style={{
-          padding: 'clamp(32px, 6vw, 56px) clamp(24px, 5vw, 56px) 0',
-          maxWidth: '900px',
-          width: '100%',
-          margin: '0 auto',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          padding: '12px 18px',
+          borderBottom: '1px solid #ddd5c8',
+          background: '#f4efe6',
+          flexShrink: 0,
         }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '16px',
-          }}>
-            {/* Wordmark */}
-            <div>
-              <h1
-                onClick={reset}
-                style={{
-                  fontSize: 'clamp(56px, 12vw, 108px)',
-                  fontWeight: 900,
-                  letterSpacing: '-0.045em',
-                  lineHeight: 0.88,
-                  textTransform: 'lowercase',
-                  cursor: status !== 'idle' ? 'pointer' : 'default',
-                  userSelect: 'none',
-                }}
-              >
-                type<br />
-                <span style={{ color: '#c9933a' }}>stuff.</span>
-              </h1>
-              <p style={{
-                marginTop: '14px',
-                fontSize: '13px',
-                color: '#9a9080',
-                letterSpacing: '0.02em',
-              }}>
-                Paste a URL. Get the fonts. No devtools.
-              </p>
-            </div>
-
-            {/* Result count pill */}
-            {status === 'done' && (
-              <div style={{
-                background: '#1a1a1a',
-                color: '#f4efe6',
-                fontSize: '12px',
-                fontWeight: 700,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                padding: '8px 14px',
-                borderRadius: '3px',
-                alignSelf: 'flex-start',
-                marginTop: '8px',
-              }}>
-                {fonts.length} typeface{fonts.length !== 1 ? 's' : ''}
-              </div>
-            )}
+          <div
+            onClick={reset}
+            style={{
+              fontSize: '18px',
+              fontWeight: 900,
+              letterSpacing: '-0.03em',
+              lineHeight: 1,
+              cursor: 'pointer',
+              userSelect: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            type<span style={{ color: '#c9933a' }}>stuff.</span>
           </div>
 
-          <div style={{
-            height: '1.5px',
-            background: '#ddd5c8',
-            margin: '28px 0 0',
-          }} />
+          <input
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            onKeyDown={handleKey}
+            placeholder="paste a URL"
+            style={{
+              flex: 1,
+              maxWidth: '560px',
+              background: '#fff',
+              border: '1.5px solid #d0c8bc',
+              borderRadius: '4px',
+              padding: '8px 12px',
+              fontSize: '13px',
+              color: '#1a1a1a',
+              fontFamily: 'inherit',
+            }}
+          />
+          <button
+            onClick={scan}
+            disabled={status === 'loading'}
+            style={{
+              background: status === 'loading' ? '#c8c0b6' : '#1a1a1a',
+              color: '#f4efe6',
+              border: 'none',
+              borderRadius: '4px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: 700,
+              fontFamily: 'inherit',
+              letterSpacing: '0.04em',
+              cursor: status === 'loading' ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {status === 'loading' ? 'scanning…' : 'scan →'}
+          </button>
+
+          {status === 'done' && (
+            <div style={{
+              background: '#1a1a1a',
+              color: '#f4efe6',
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              padding: '6px 11px',
+              borderRadius: '3px',
+              whiteSpace: 'nowrap',
+            }}>
+              {fonts.length} typeface{fonts.length !== 1 ? 's' : ''}
+            </div>
+          )}
         </header>
 
-        {/* ── Main ── */}
-        <main style={{
+        {/* ── Two-pane body ── */}
+        <div style={{
           flex: 1,
-          padding: 'clamp(24px, 4vw, 40px) clamp(24px, 5vw, 56px) 80px',
-          maxWidth: '900px',
-          width: '100%',
-          margin: '0 auto',
+          display: 'flex',
+          minHeight: 0,
         }}>
-
-          {/* Input row */}
-          <div style={{ display: 'flex', gap: '8px', maxWidth: '660px' }}>
-            <input
-              ref={inputRef}
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              onKeyDown={handleKey}
-              placeholder="e.g. are.na or tracksmith.com"
-              style={{
-                flex: 1,
-                background: '#fff',
-                border: '1.5px solid #d0c8bc',
-                borderRadius: '4px',
-                padding: '13px 16px',
-                fontSize: '15px',
-                color: '#1a1a1a',
-                fontFamily: 'inherit',
-                transition: 'border-color 0.15s',
-              }}
-              onFocus={e => e.target.style.borderColor = '#1a1a1a'}
-              onBlur={e => e.target.style.borderColor = '#d0c8bc'}
-            />
-            <button
-              onClick={scan}
-              disabled={status === 'loading'}
-              style={{
-                background: status === 'loading' ? '#c8c0b6' : '#1a1a1a',
-                color: '#f4efe6',
-                border: 'none',
-                borderRadius: '4px',
-                padding: '13px 22px',
-                fontSize: '14px',
-                fontWeight: 700,
-                fontFamily: 'inherit',
-                letterSpacing: '0.03em',
-                cursor: status === 'loading' ? 'not-allowed' : 'pointer',
-                transition: 'background 0.15s',
-                whiteSpace: 'nowrap',
+          {/* Sidebar */}
+          <aside style={{
+            width: '340px',
+            flexShrink: 0,
+            borderRight: '1px solid #ddd5c8',
+            background: '#faf6ed',
+            overflowY: 'auto',
+            padding: '14px',
+          }}>
+            {status === 'loading' && (
+              <div style={{
+                fontSize: '12px',
+                color: '#b0a898',
+                letterSpacing: '0.04em',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-              }}
-            >
-              {status === 'loading' ? (
-                <>
-                  <div style={{
-                    width: '13px', height: '13px',
-                    border: '2px solid #a09888',
-                    borderTopColor: '#f4efe6',
-                    borderRadius: '50%',
-                    animation: 'spin 0.6s linear infinite',
-                  }} />
-                  scanning
-                </>
-              ) : 'scan →'}
-            </button>
-          </div>
-
-          {/* Loading state */}
-          {status === 'loading' && (
-            <div style={{
-              marginTop: '28px',
-              fontSize: '12px',
-              color: '#b0a898',
-              letterSpacing: '0.04em',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}>
-              <div style={{
-                width: '6px', height: '6px', borderRadius: '50%',
-                background: '#c9933a',
-                animation: 'pulse 1.2s ease-in-out infinite',
-              }} />
-              Fetching {scannedUrl}
-            </div>
-          )}
-
-          {/* Error */}
-          {status === 'error' && (
-            <div style={{
-              marginTop: '24px',
-              background: '#fff5f5',
-              border: '1.5px solid #f5c5c5',
-              borderRadius: '4px',
-              padding: '14px 18px',
-              fontSize: '13px',
-              color: '#c0392b',
-              maxWidth: '660px',
-            }}>
-              <strong>Couldn't reach that site.</strong>{' '}
-              <span style={{ color: '#b0a898' }}>
-                {errorMsg || 'The site may be blocking external requests.'}
-              </span>
-            </div>
-          )}
-
-          {/* Results */}
-          {status === 'done' && (
-            <div style={{ marginTop: '36px' }}>
-              <div style={{
-                fontSize: '11px',
-                color: '#b0a898',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                marginBottom: '16px',
+                padding: '12px 4px',
               }}>
-                {scannedUrl}
+                <div style={{
+                  width: '6px', height: '6px', borderRadius: '50%',
+                  background: '#c9933a',
+                  animation: 'pulse 1.2s ease-in-out infinite',
+                }} />
+                Fetching {scannedUrl}
               </div>
+            )}
 
-              {fonts.length === 0 ? (
-                <div style={{
-                  border: '1.5px dashed #d0c8bc',
-                  borderRadius: '4px',
-                  padding: '40px',
-                  textAlign: 'center',
-                  color: '#b0a898',
-                  fontSize: '14px',
-                  maxWidth: '660px',
-                }}>
-                  No typefaces detected — site may use system fonts or JS-loaded type.
-                </div>
-              ) : (
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                  gap: '10px',
-                }}>
-                  {fonts.map((font, i) => (
-                    <FontCard key={font.name} font={font} index={i} />
-                  ))}
-                </div>
-              )}
-
-              <p style={{
-                marginTop: '28px',
-                fontSize: '11px',
-                color: '#c0b8ae',
-                lineHeight: 1.7,
-                maxWidth: '520px',
+            {status === 'error' && (
+              <div style={{
+                background: '#fff5f5',
+                border: '1.5px solid #f5c5c5',
+                borderRadius: '4px',
+                padding: '12px 14px',
+                fontSize: '12px',
+                color: '#c0392b',
               }}>
-                Fonts loaded via JavaScript bundles won't appear here — for those you still need devtools on desktop.
-                {' '}<span
-                  onClick={reset}
-                  style={{ color: '#9a9080', cursor: 'pointer', textDecoration: 'underline' }}
-                >
-                  Scan another site →
+                <strong>Couldn't reach that site.</strong>{' '}
+                <span style={{ color: '#b0a898' }}>
+                  {errorMsg || 'Site may be blocking external requests.'}
                 </span>
-              </p>
-            </div>
-          )}
-        </main>
+              </div>
+            )}
 
-        {/* ── Footer ── */}
-        <footer style={{
-          borderTop: '1px solid #ddd5c8',
-          padding: '18px clamp(24px, 5vw, 56px)',
-          maxWidth: '900px',
-          width: '100%',
-          margin: '0 auto',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '8px',
-        }}>
-          <span style={{ fontSize: '11px', color: '#c0b8ae', letterSpacing: '0.06em' }}>
-            TYPE STUFF — font scanner
-          </span>
-          <span style={{ fontSize: '11px', color: '#d0c8bc', letterSpacing: '0.04em' }}>
-            no devtools needed.
-          </span>
-        </footer>
+            {status === 'done' && fonts.length === 0 && (
+              <div style={{
+                border: '1.5px dashed #d0c8bc',
+                borderRadius: '4px',
+                padding: '24px',
+                textAlign: 'center',
+                color: '#b0a898',
+                fontSize: '13px',
+              }}>
+                No typefaces detected — site may use system fonts or JS-loaded type.
+              </div>
+            )}
+
+            {status === 'done' && fonts.length > 0 && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}>
+                {fonts.map((font, i) => (
+                  <div key={font.name} data-font-idx={i}>
+                    <FontModule
+                      font={font}
+                      index={i}
+                      isHovered={matches(font.name, hoveredFont)}
+                      isPinned={matches(font.name, pinnedFont)}
+                      onClick={() =>
+                        setPinnedFont(pinnedFont && matches(font.name, pinnedFont) ? null : font.name)
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </aside>
+
+          {/* Preview */}
+          <main style={{
+            flex: 1,
+            position: 'relative',
+            background: '#fff',
+            minWidth: 0,
+          }}>
+            {status === 'loading' && (
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#b0a898',
+                fontSize: '13px',
+                letterSpacing: '0.04em',
+              }}>
+                Loading preview…
+              </div>
+            )}
+
+            {(status === 'done' || status === 'error') && proxyUrl && (
+              <iframe
+                src={proxyUrl}
+                title="preview"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                  display: 'block',
+                  background: '#fff',
+                }}
+              />
+            )}
+
+            {status === 'done' && (
+              <div style={{
+                position: 'absolute',
+                bottom: '12px',
+                right: '12px',
+                background: 'rgba(26,26,26,0.85)',
+                color: '#f4efe6',
+                fontSize: '11px',
+                padding: '6px 10px',
+                borderRadius: '3px',
+                letterSpacing: '0.04em',
+                pointerEvents: 'none',
+                backdropFilter: 'blur(4px)',
+              }}>
+                hover text to inspect · click to pin
+              </div>
+            )}
+          </main>
+        </div>
       </div>
     </>
   );
