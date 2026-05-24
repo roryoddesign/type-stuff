@@ -324,6 +324,85 @@ function injectInspector(html) {
   }
   window.addEventListener('scroll', reposition, true);
   window.addEventListener('resize', reposition);
+
+  // ── Tally how many text-bearing elements use each font ──────────────
+  function normalizeKey(s) {
+    return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  function tallyFonts() {
+    if (!document.body) return;
+    var counts = {};
+    try {
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      var seen = new Set();
+      var node;
+      while ((node = walker.nextNode())) {
+        if (!node.textContent || !node.textContent.trim()) continue;
+        var el = node.parentElement;
+        if (!el || seen.has(el)) continue;
+        seen.add(el);
+        if (SKIP_TAGS[el.tagName]) continue;
+        if (el.namespaceURI && el.namespaceURI.indexOf('svg') !== -1) continue;
+        var f = firstRealFamily(getComputedStyle(el).fontFamily);
+        if (!f) continue;
+        var key = normalizeKey(f);
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    } catch(e) { return; }
+    parent.postMessage({ source:'typestuff-inspector', type:'tally', counts: counts }, '*');
+  }
+
+  // Run a few times — tally what's there now, plus catch late-rendered SPAs
+  setTimeout(tallyFonts, 800);
+  setTimeout(tallyFonts, 2500);
+  setTimeout(tallyFonts, 5000);
+
+  // ── Listen for "find this font" requests from the parent ────────────
+  window.addEventListener('message', function(e) {
+    var d = e.data;
+    if (!d || d.source !== 'typestuff-parent') return;
+    if (d.type !== 'find' || !d.font) return;
+
+    var nt = normalizeKey(d.font);
+    var found = null;
+    try {
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      var seen = new Set();
+      var node;
+      while ((node = walker.nextNode())) {
+        if (!node.textContent || !node.textContent.trim()) continue;
+        var el = node.parentElement;
+        if (!el || seen.has(el)) continue;
+        seen.add(el);
+        if (SKIP_TAGS[el.tagName]) continue;
+        if (el.namespaceURI && el.namespaceURI.indexOf('svg') !== -1) continue;
+        var f = firstRealFamily(getComputedStyle(el).fontFamily);
+        if (!f) continue;
+        if (normalizeKey(f) === nt) { found = el; break; }
+      }
+    } catch(err) {}
+
+    if (!found) return;
+    try {
+      found.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch(err) {
+      found.scrollIntoView();
+    }
+    // Pulse the overlay to make the find obvious
+    lastEl = found;
+    var f2 = firstRealFamily(getComputedStyle(found).fontFamily);
+    var pretty = prettyName(f2 || d.font);
+    lastFont = pretty;
+    label.textContent = pretty;
+    positionOverlay(found);
+    overlay.style.background = 'rgba(201,147,58,0.35)';
+    overlay.style.borderWidth = '3px';
+    setTimeout(function(){
+      overlay.style.background = 'rgba(201,147,58,0.08)';
+      overlay.style.borderWidth = '2px';
+    }, 900);
+  });
 })();</script>
 `.trim();
 

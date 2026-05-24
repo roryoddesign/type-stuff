@@ -19,6 +19,12 @@ function purveyorLinks(font) {
   const cleaned = font.displayName || font.name;
   const q = encodeURIComponent(cleaned);
   const plus = cleaned.replace(/ /g, '+');
+  // Use Google site-scoped search for foundries whose own search URLs are
+  // unstable or 404 on miss (MyFonts, Fonts in Use). Direct search is kept
+  // for sites where it actually returns useful results.
+  const siteSearch = (site) =>
+    `https://www.google.com/search?q=${encodeURIComponent(`${cleaned} site:${site}`)}`;
+
   const links = [];
 
   if (font.sources.includes('Google Fonts')) {
@@ -26,10 +32,11 @@ function purveyorLinks(font) {
   } else {
     links.push({ label: 'Google Fonts', href: `https://fonts.google.com/?query=${q}` });
   }
-  links.push({ label: 'Adobe Fonts',   href: `https://fonts.adobe.com/search?query=${q}` });
-  links.push({ label: 'MyFonts',       href: `https://www.myfonts.com/collections/search?query=${q}` });
-  links.push({ label: 'Fontshare',     href: `https://www.fontshare.com/?q=${q}` });
-  links.push({ label: 'Fonts in Use',  href: `https://fontsinuse.com/search/global/${q}` });
+  links.push({ label: 'Adobe Fonts',  href: `https://fonts.adobe.com/search?query=${q}` });
+  links.push({ label: 'Fontshare',    href: `https://www.fontshare.com/?q=${q}` });
+  links.push({ label: 'MyFonts',      href: siteSearch('myfonts.com') });
+  links.push({ label: 'Fonts in Use', href: siteSearch('fontsinuse.com') });
+  links.push({ label: 'Web search',   href: `https://www.google.com/search?q=${encodeURIComponent(cleaned + ' typeface')}` });
 
   return links;
 }
@@ -52,7 +59,7 @@ function Badge({ source }) {
   );
 }
 
-function FontModule({ font, index, isHovered, isPinned, onClick }) {
+function FontModule({ font, index, count, isHovered, isPinned, onClick }) {
   const links = useMemo(() => purveyorLinks(font), [font]);
   const expanded = isPinned;
 
@@ -93,17 +100,29 @@ function FontModule({ font, index, isHovered, isPinned, onClick }) {
         }}>
           {String(index + 1).padStart(2, '0')}
         </div>
-        {isPinned && (
-          <div style={{
-            fontSize: '9px',
-            fontWeight: 700,
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-            color: '#c9933a',
-          }}>
-            ● pinned
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {count > 0 && (
+            <div style={{
+              fontSize: '9px',
+              color: '#9a9080',
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+            }}>
+              {count} use{count !== 1 ? 's' : ''}
+            </div>
+          )}
+          {isPinned && (
+            <div style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: '#c9933a',
+            }}>
+              ● pinned
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{
@@ -176,7 +195,10 @@ export default function Home() {
   const [errorMsg, setErrorMsg] = useState('');
   const [hoveredFont, setHoveredFont] = useState(null);
   const [pinnedFont, setPinnedFont] = useState(null);
+  const [usageCounts, setUsageCounts] = useState({}); // { normalizedKey: count }
+  const [showSecondary, setShowSecondary] = useState(false);
   const inputRef = useRef(null);
+  const iframeRef = useRef(null);
 
   // Listen for inspector postMessages from the proxied iframe
   useEffect(() => {
@@ -188,11 +210,36 @@ export default function Home() {
       else if (data.type === 'pin') {
         setPinnedFont(data.font);
         setHoveredFont(data.font);
+      } else if (data.type === 'tally' && data.counts) {
+        setUsageCounts(prev => ({ ...prev, ...data.counts }));
       }
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, []);
+
+  // Ask the iframe to scroll-to + flash-highlight the first instance of a font
+  const findInPreview = (font) => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    const msg = {
+      source: 'typestuff-parent',
+      type: 'find',
+      font: font.displayName || font.name,
+    };
+    win.postMessage(msg, '*');
+    // Belt-and-suspenders for the race against inspector script readiness
+    setTimeout(() => iframeRef.current?.contentWindow?.postMessage(msg, '*'), 250);
+    setTimeout(() => iframeRef.current?.contentWindow?.postMessage(msg, '*'), 800);
+  };
+
+  const countFor = (font) => {
+    return (
+      usageCounts[normalize(font.name)] ||
+      usageCounts[normalize(font.displayName || '')] ||
+      0
+    );
+  };
 
   // Auto-scroll pinned/hovered module into view in the sidebar
   useEffect(() => {
@@ -214,6 +261,8 @@ export default function Home() {
     setErrorMsg('');
     setPinnedFont(null);
     setHoveredFont(null);
+    setUsageCounts({});
+    setShowSecondary(false);
     setScannedUrl(target);
 
     try {
@@ -485,27 +534,91 @@ export default function Home() {
               </div>
             )}
 
-            {status === 'done' && fonts.length > 0 && (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-              }}>
-                {fonts.map((font, i) => (
-                  <div key={font.name} data-font-idx={i}>
-                    <FontModule
-                      font={font}
-                      index={i}
-                      isHovered={matches(font.name, hoveredFont)}
-                      isPinned={matches(font.name, pinnedFont)}
-                      onClick={() =>
-                        setPinnedFont(pinnedFont && matches(font.name, pinnedFont) ? null : font.name)
+            {status === 'done' && fonts.length > 0 && (() => {
+              // Sort by usage count desc; split into primary (used 3+ times)
+              // and secondary (rare / fallback-only). Until counts arrive
+              // from the iframe, everything stays in primary.
+              const PRIMARY_MIN = 3;
+              const sorted = [...fonts].sort((a, b) => countFor(b) - countFor(a));
+              const haveCounts = Object.keys(usageCounts).length > 0;
+              const primary = haveCounts
+                ? sorted.filter(f => countFor(f) >= PRIMARY_MIN)
+                : sorted;
+              const secondary = haveCounts
+                ? sorted.filter(f => countFor(f) < PRIMARY_MIN)
+                : [];
+
+              const renderModule = (font, i) => (
+                <div key={font.name} data-font-idx={i}>
+                  <FontModule
+                    font={font}
+                    index={i}
+                    count={countFor(font)}
+                    isHovered={matches(font.name, hoveredFont)}
+                    isPinned={matches(font.name, pinnedFont)}
+                    onClick={() => {
+                      const isPinned = pinnedFont && matches(font.name, pinnedFont);
+                      if (isPinned) {
+                        setPinnedFont(null);
+                      } else {
+                        setPinnedFont(font.name);
+                        findInPreview(font);
                       }
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+                    }}
+                  />
+                </div>
+              );
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {primary.length === 0 && secondary.length > 0 && (
+                    <div style={{
+                      fontSize: '11px',
+                      color: '#b0a898',
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase',
+                      padding: '4px 2px',
+                    }}>
+                      Only fallback fonts detected
+                    </div>
+                  )}
+                  {primary.map(renderModule)}
+
+                  {secondary.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => setShowSecondary(s => !s)}
+                        style={{
+                          marginTop: '10px',
+                          background: 'transparent',
+                          border: '1px dashed #d0c8bc',
+                          borderRadius: '4px',
+                          padding: '10px 12px',
+                          fontSize: '11px',
+                          color: '#9a9080',
+                          fontFamily: 'inherit',
+                          letterSpacing: '0.06em',
+                          textTransform: 'uppercase',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span>
+                          {showSecondary ? '−' : '+'} {secondary.length} rarely used
+                        </span>
+                        <span style={{ fontSize: '10px', color: '#c0b8ae' }}>
+                          {showSecondary ? 'hide' : 'show'}
+                        </span>
+                      </button>
+                      {showSecondary && secondary.map((f, i) => renderModule(f, primary.length + i))}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
           </aside>
 
           {/* Preview */}
@@ -532,6 +645,7 @@ export default function Home() {
 
             {(status === 'done' || status === 'error') && proxyUrl && (
               <iframe
+                ref={iframeRef}
                 src={proxyUrl}
                 title="preview"
                 style={{
@@ -558,7 +672,7 @@ export default function Home() {
                 pointerEvents: 'none',
                 backdropFilter: 'blur(4px)',
               }}>
-                hover to inspect · ⌘-click to pin
+                hover to inspect · ⌘-click to pin · click sidebar to find
               </div>
             )}
           </main>
