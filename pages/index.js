@@ -555,7 +555,7 @@ export default function Home() {
                 pointerEvents: 'none',
                 backdropFilter: 'blur(4px)',
               }}>
-                hover text to inspect · click to pin
+                hover to inspect · ⌘-click to pin
               </div>
             )}
           </main>

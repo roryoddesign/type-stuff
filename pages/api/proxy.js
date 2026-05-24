@@ -36,6 +36,7 @@ export default async function handler(req, res) {
 
     let html = await upstream.text();
     html = injectBaseTag(html, target.origin + target.pathname);
+    html = injectPopupBlocker(html);
     html = injectInspector(html);
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -57,6 +58,52 @@ function injectBaseTag(html, href) {
 
 function escapeAttr(s) {
   return s.replace(/"/g, '&quot;');
+}
+
+function injectPopupBlocker(html) {
+  const css = `
+<style id="__typestuff-blocker">
+  /* Cookie / consent management platforms */
+  #onetrust-consent-sdk, #onetrust-banner-sdk, #onetrust-pc-sdk, .onetrust-pc-dark-filter,
+  #CybotCookiebotDialog, #CybotCookiebotDialogBodyUnderlay, #CookiebotWidget,
+  .osano-cm-dialog, .osano-cm-window, .osano-cm-dialog--type_bar,
+  .cc-window, .cc-revoke, .cc-banner,
+  .cky-consent-container, .cky-overlay, .cky-modal, .cky-consent-bar,
+  .didomi-popup-container, #didomi-host, .didomi-popup-backdrop,
+  .truste_box_overlay, .truste_overlay, .truste-banner, #truste-consent-track,
+  .qc-cmp-cleanslate, .qc-cmp2-container, #qc-cmp2-ui,
+  .iubenda-cs-container, #iubenda-cs-banner,
+  .termly-cmp-banner, #termly-code-snippet-support,
+  /* Generic GDPR / cookie selectors */
+  [class*="cookie-banner"], [id*="cookie-banner"],
+  [class*="cookie-consent"], [id*="cookie-consent"],
+  [class*="cookie-notice"], [id*="cookie-notice"],
+  [class*="cookie-policy"], [id*="cookie-policy"],
+  [class*="cookie-popup"], [id*="cookie-popup"],
+  [class*="gdpr-banner"], [id*="gdpr"],
+  /* Common newsletter / marketing popups */
+  [class*="klaviyo-form-"], [class*="klaviyo_form"], .needsclick[class*="klaviyo"],
+  .privy-modal, .privy_modal_overlay, [class*="privy_"],
+  [id*="mc-modal"], [class*="mailchimp-popup"], #mc_embed_signup_scroll,
+  .sumome-react-wysiwyg-popup-overlay, .sumo-popup-overlay,
+  .pum-overlay, .pum-container,
+  .ouibounce-modal, #ouibounce-modal,
+  [id^="popup-"][role="dialog"], [class*="newsletter-popup"], [class*="email-popup"] {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  /* Unlock scroll that popups often hijack */
+  html, body {
+    overflow: auto !important;
+    overflow-x: hidden !important;
+  }
+</style>
+`.trim();
+
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, m => m + css);
+  }
+  return css + html;
 }
 
 function injectInspector(html) {
@@ -149,7 +196,10 @@ function injectInspector(html) {
   }, true);
 
   document.addEventListener('click', function(e) {
+    // Only pin on modifier-click — plain clicks pass through so the user
+    // can dismiss popups, close modals, follow links, etc.
     if (!lastFont) return;
+    if (!(e.metaKey || e.ctrlKey)) return;
     e.preventDefault();
     e.stopPropagation();
     parent.postMessage({ source:'typestuff-inspector', type:'pin', font: lastFont }, '*');
