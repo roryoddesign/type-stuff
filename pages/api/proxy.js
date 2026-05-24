@@ -61,49 +61,129 @@ function escapeAttr(s) {
 }
 
 function injectPopupBlocker(html) {
-  const css = `
-<style id="__typestuff-blocker">
-  /* Cookie / consent management platforms */
-  #onetrust-consent-sdk, #onetrust-banner-sdk, #onetrust-pc-sdk, .onetrust-pc-dark-filter,
-  #CybotCookiebotDialog, #CybotCookiebotDialogBodyUnderlay, #CookiebotWidget,
-  .osano-cm-dialog, .osano-cm-window, .osano-cm-dialog--type_bar,
-  .cc-window, .cc-revoke, .cc-banner,
-  .cky-consent-container, .cky-overlay, .cky-modal, .cky-consent-bar,
-  .didomi-popup-container, #didomi-host, .didomi-popup-backdrop,
-  .truste_box_overlay, .truste_overlay, .truste-banner, #truste-consent-track,
-  .qc-cmp-cleanslate, .qc-cmp2-container, #qc-cmp2-ui,
-  .iubenda-cs-container, #iubenda-cs-banner,
-  .termly-cmp-banner, #termly-code-snippet-support,
-  /* Generic GDPR / cookie selectors */
-  [class*="cookie-banner"], [id*="cookie-banner"],
-  [class*="cookie-consent"], [id*="cookie-consent"],
-  [class*="cookie-notice"], [id*="cookie-notice"],
-  [class*="cookie-policy"], [id*="cookie-policy"],
-  [class*="cookie-popup"], [id*="cookie-popup"],
-  [class*="gdpr-banner"], [id*="gdpr"],
-  /* Common newsletter / marketing popups */
-  [class*="klaviyo-form-"], [class*="klaviyo_form"], .needsclick[class*="klaviyo"],
-  .privy-modal, .privy_modal_overlay, [class*="privy_"],
-  [id*="mc-modal"], [class*="mailchimp-popup"], #mc_embed_signup_scroll,
-  .sumome-react-wysiwyg-popup-overlay, .sumo-popup-overlay,
-  .pum-overlay, .pum-container,
-  .ouibounce-modal, #ouibounce-modal,
-  [id^="popup-"][role="dialog"], [class*="newsletter-popup"], [class*="email-popup"] {
-    display: none !important;
-    visibility: hidden !important;
-  }
-  /* Unlock scroll that popups often hijack */
-  html, body {
-    overflow: auto !important;
-    overflow-x: hidden !important;
-  }
-</style>
-`.trim();
+  // Selectors shared between the CSS hide and the JS DOM-remove pass.
+  const SELECTORS = [
+    // Cookie / consent management platforms
+    '#onetrust-consent-sdk', '#onetrust-banner-sdk', '#onetrust-pc-sdk', '.onetrust-pc-dark-filter',
+    '#CybotCookiebotDialog', '#CybotCookiebotDialogBodyUnderlay', '#CookiebotWidget',
+    '.osano-cm-dialog', '.osano-cm-window', '.osano-cm-dialog--type_bar',
+    '.cc-window', '.cc-revoke', '.cc-banner',
+    '.cky-consent-container', '.cky-overlay', '.cky-modal', '.cky-consent-bar',
+    '.didomi-popup-container', '#didomi-host', '.didomi-popup-backdrop',
+    '.truste_box_overlay', '.truste_overlay', '.truste-banner', '#truste-consent-track',
+    '.qc-cmp-cleanslate', '.qc-cmp2-container', '#qc-cmp2-ui',
+    '.iubenda-cs-container', '#iubenda-cs-banner',
+    '.termly-cmp-banner', '#termly-code-snippet-support',
+    // Generic GDPR / cookie selectors
+    '[class*="cookie-banner"]', '[id*="cookie-banner"]',
+    '[class*="cookie-consent"]', '[id*="cookie-consent"]',
+    '[class*="cookie-notice"]', '[id*="cookie-notice"]',
+    '[class*="cookie-policy"]', '[id*="cookie-policy"]',
+    '[class*="cookie-popup"]', '[id*="cookie-popup"]',
+    '[class*="gdpr-banner"]', '[id*="gdpr"]',
+    // Common newsletter / marketing popups
+    '[class*="klaviyo-form-"]', '[class*="klaviyo_form"]', '.needsclick[class*="klaviyo"]',
+    '.privy-modal', '.privy_modal_overlay', '[class*="privy_"]',
+    '[id*="mc-modal"]', '[class*="mailchimp-popup"]', '#mc_embed_signup_scroll',
+    '.sumome-react-wysiwyg-popup-overlay', '.sumo-popup-overlay',
+    '.pum-overlay', '.pum-container', '[class*="popmake-overlay"]',
+    '.ouibounce-modal', '#ouibounce-modal',
+    '.wisepops-popup', '[class*="wisepops"]',
+    '[id^="popup-"][role="dialog"]', '[class*="newsletter-popup"]', '[class*="email-popup"]',
+    '[class*="exit-intent"]', '[class*="exit-popup"]',
+  ];
+  const selectorList = SELECTORS.join(', ');
 
-  if (/<head[^>]*>/i.test(html)) {
-    return html.replace(/<head[^>]*>/i, m => m + css);
+  const css = `<style id="__typestuff-blocker">
+${selectorList} {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+html, body {
+  overflow: auto !important;
+  overflow-x: hidden !important;
+  position: static !important;
+  height: auto !important;
+}
+</style>`;
+
+  // The runtime killer: physically removes matching nodes (so focus traps go
+  // with them), continuously unwinds inline scroll-lock styles/classes that
+  // popup scripts set on <body>, dispatches synthetic Escape keydowns (so
+  // listeners that close on Esc run their teardown), and uses a
+  // MutationObserver to catch popups injected after page load.
+  const script = `<script id="__typestuff-killer">(function(){
+  if (window.__typestuffPopupKiller) return;
+  window.__typestuffPopupKiller = true;
+  var SELECTORS = ${JSON.stringify(selectorList)};
+
+  function unlockScroll() {
+    var b = document.body, h = document.documentElement;
+    if (b) {
+      b.style.overflow = '';
+      b.style.position = '';
+      b.style.height = '';
+      b.style.paddingRight = '';
+      // Bootstrap-style modal-open / common no-scroll classes
+      b.classList.remove('modal-open','no-scroll','noscroll','overflow-hidden','scroll-lock','is-locked','body-lock');
+    }
+    if (h) {
+      h.style.overflow = '';
+      h.classList.remove('no-scroll','noscroll','overflow-hidden','scroll-lock');
+    }
   }
-  return css + html;
+
+  function nuke() {
+    try {
+      var els = document.querySelectorAll(SELECTORS);
+      for (var i = 0; i < els.length; i++) {
+        if (els[i].parentNode) els[i].parentNode.removeChild(els[i]);
+      }
+    } catch(e) {}
+    unlockScroll();
+  }
+
+  function escape() {
+    try {
+      var ev = new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+        bubbles: true, cancelable: true
+      });
+      document.dispatchEvent(ev);
+      if (document.body) document.body.dispatchEvent(ev);
+      if (document.activeElement) document.activeElement.dispatchEvent(ev);
+    } catch(e) {}
+  }
+
+  function init() {
+    nuke();
+    escape();
+    try {
+      var obs = new MutationObserver(function(muts){
+        // Only react if something with class/id was added — cheap filter
+        nuke();
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+    } catch(e) {}
+    // Some popups are injected late or animate in; sweep a few times
+    setTimeout(function(){ nuke(); escape(); }, 600);
+    setTimeout(function(){ nuke(); escape(); }, 1800);
+    setTimeout(function(){ nuke(); escape(); }, 4000);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();</script>`;
+
+  const blob = css + script;
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, m => m + blob);
+  }
+  return blob + html;
 }
 
 function injectInspector(html) {

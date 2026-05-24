@@ -13,9 +13,17 @@ function normalize(name) {
   return (name || '').toLowerCase().replace(/['"]/g, '').trim();
 }
 
+function searchQuery(name) {
+  // Foundries' search engines treat "akzidenz-grotesk-extended" as a single
+  // token and return nothing — split on dashes/underscores so each word can
+  // match. Collapse repeated whitespace.
+  return name.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function purveyorLinks(font) {
-  const q = encodeURIComponent(font.name);
-  const plus = font.name.replace(/ /g, '+');
+  const cleaned = searchQuery(font.name);
+  const q = encodeURIComponent(cleaned);
+  const plus = cleaned.replace(/ /g, '+');
   const links = [];
 
   if (font.sources.includes('Google Fonts')) {
