@@ -196,7 +196,6 @@ export default function Home() {
   const [hoveredFont, setHoveredFont] = useState(null);
   const [pinnedFont, setPinnedFont] = useState(null);
   const [usageCounts, setUsageCounts] = useState({}); // { normalizedKey: count }
-  const [showSecondary, setShowSecondary] = useState(false);
   const inputRef = useRef(null);
   const iframeRef = useRef(null);
 
@@ -262,7 +261,6 @@ export default function Home() {
     setPinnedFont(null);
     setHoveredFont(null);
     setUsageCounts({});
-    setShowSecondary(false);
     setScannedUrl(target);
 
     try {
@@ -534,91 +532,32 @@ export default function Home() {
               </div>
             )}
 
-            {status === 'done' && fonts.length > 0 && (() => {
-              // Sort by usage count desc; split into primary (used 3+ times)
-              // and secondary (rare / fallback-only). Until counts arrive
-              // from the iframe, everything stays in primary.
-              const PRIMARY_MIN = 3;
-              const sorted = [...fonts].sort((a, b) => countFor(b) - countFor(a));
-              const haveCounts = Object.keys(usageCounts).length > 0;
-              const primary = haveCounts
-                ? sorted.filter(f => countFor(f) >= PRIMARY_MIN)
-                : sorted;
-              const secondary = haveCounts
-                ? sorted.filter(f => countFor(f) < PRIMARY_MIN)
-                : [];
-
-              const renderModule = (font, i) => (
-                <div key={font.name} data-font-idx={i}>
-                  <FontModule
-                    font={font}
-                    index={i}
-                    count={countFor(font)}
-                    isHovered={matches(font.name, hoveredFont)}
-                    isPinned={matches(font.name, pinnedFont)}
-                    onClick={() => {
-                      const isPinned = pinnedFont && matches(font.name, pinnedFont);
-                      if (isPinned) {
-                        setPinnedFont(null);
-                      } else {
-                        setPinnedFont(font.name);
-                        findInPreview(font);
-                      }
-                    }}
-                  />
-                </div>
-              );
-
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {primary.length === 0 && secondary.length > 0 && (
-                    <div style={{
-                      fontSize: '11px',
-                      color: '#b0a898',
-                      letterSpacing: '0.06em',
-                      textTransform: 'uppercase',
-                      padding: '4px 2px',
-                    }}>
-                      Only fallback fonts detected
-                    </div>
-                  )}
-                  {primary.map(renderModule)}
-
-                  {secondary.length > 0 && (
-                    <>
-                      <button
-                        onClick={() => setShowSecondary(s => !s)}
-                        style={{
-                          marginTop: '10px',
-                          background: 'transparent',
-                          border: '1px dashed #d0c8bc',
-                          borderRadius: '4px',
-                          padding: '10px 12px',
-                          fontSize: '11px',
-                          color: '#9a9080',
-                          fontFamily: 'inherit',
-                          letterSpacing: '0.06em',
-                          textTransform: 'uppercase',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
+            {status === 'done' && fonts.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {[...fonts]
+                  .sort((a, b) => countFor(b) - countFor(a))
+                  .map((font, i) => (
+                    <div key={font.name} data-font-idx={i}>
+                      <FontModule
+                        font={font}
+                        index={i}
+                        count={countFor(font)}
+                        isHovered={matches(font.name, hoveredFont)}
+                        isPinned={matches(font.name, pinnedFont)}
+                        onClick={() => {
+                          const isPinned = pinnedFont && matches(font.name, pinnedFont);
+                          if (isPinned) {
+                            setPinnedFont(null);
+                          } else {
+                            setPinnedFont(font.name);
+                            findInPreview(font);
+                          }
                         }}
-                      >
-                        <span>
-                          {showSecondary ? '−' : '+'} {secondary.length} rarely used
-                        </span>
-                        <span style={{ fontSize: '10px', color: '#c0b8ae' }}>
-                          {showSecondary ? 'hide' : 'show'}
-                        </span>
-                      </button>
-                      {showSecondary && secondary.map((f, i) => renderModule(f, primary.length + i))}
-                    </>
-                  )}
-                </div>
-              );
-            })()}
+                      />
+                    </div>
+                  ))}
+              </div>
+            )}
           </aside>
 
           {/* Preview */}
