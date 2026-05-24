@@ -214,6 +214,31 @@ function injectInspector(html) {
     return null;
   }
 
+  function prettyName(s) {
+    if (!s) return s;
+    return s.replace(/[-_]+/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      .replace(/\\s+/g, ' ')
+      .trim()
+      .split(' ')
+      .map(function(w){ return w.length ? w[0].toUpperCase() + w.slice(1) : w; })
+      .join(' ');
+  }
+
+  var SKIP_TAGS = { IMG:1, SVG:1, VIDEO:1, CANVAS:1, IFRAME:1, OBJECT:1, EMBED:1, PICTURE:1, AUDIO:1, INPUT:1, SELECT:1, TEXTAREA:1 };
+
+  function hasOwnText(el) {
+    if (!el.childNodes || el.childNodes.length === 0) {
+      return !!(el.textContent && el.textContent.trim());
+    }
+    for (var i = 0; i < el.childNodes.length; i++) {
+      var n = el.childNodes[i];
+      if (n.nodeType === 3 && n.textContent && n.textContent.trim()) return true;
+    }
+    return false;
+  }
+
   var overlay = document.createElement('div');
   overlay.style.cssText = [
     'position:fixed','pointer-events:none','z-index:2147483646',
@@ -257,14 +282,22 @@ function injectInspector(html) {
     var el = e.target;
     if (!el || el === overlay || el === label) return;
     if (el.nodeType !== 1) return;
+    // Skip media/non-text elements so logos and icon buttons don't show fonts
+    if (SKIP_TAGS[el.tagName]) { hide(); lastEl = null; lastFont = null; return; }
+    if (el.namespaceURI && el.namespaceURI.indexOf('svg') !== -1) {
+      hide(); lastEl = null; lastFont = null; return;
+    }
+    if (!hasOwnText(el)) { hide(); lastEl = null; lastFont = null; return; }
+
     var cs = getComputedStyle(el);
     var font = firstRealFamily(cs.fontFamily);
     if (!font) { hide(); lastEl = null; lastFont = null; return; }
+    var pretty = prettyName(font);
     lastEl = el;
-    lastFont = font;
-    label.textContent = font;
+    lastFont = pretty;
+    label.textContent = pretty;
     positionOverlay(el);
-    parent.postMessage({ source:'typestuff-inspector', type:'hover', font: font }, '*');
+    parent.postMessage({ source:'typestuff-inspector', type:'hover', font: pretty }, '*');
   }, true);
 
   document.addEventListener('mouseout', function(e) {

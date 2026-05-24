@@ -10,18 +10,13 @@ const SOURCE_META = {
 };
 
 function normalize(name) {
-  return (name || '').toLowerCase().replace(/['"]/g, '').trim();
-}
-
-function searchQuery(name) {
-  // Foundries' search engines treat "akzidenz-grotesk-extended" as a single
-  // token and return nothing — split on dashes/underscores so each word can
-  // match. Collapse repeated whitespace.
-  return name.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  // Strip all non-alphanumeric so "SainteColombe", "Sainte Colombe", and
+  // "sainte-colombe" all collapse to the same key for matching.
+  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function purveyorLinks(font) {
-  const cleaned = searchQuery(font.name);
+  const cleaned = font.displayName || font.name;
   const q = encodeURIComponent(cleaned);
   const plus = cleaned.replace(/ /g, '+');
   const links = [];
@@ -117,10 +112,10 @@ function FontModule({ font, index, isHovered, isPinned, onClick }) {
         letterSpacing: '-0.02em',
         lineHeight: 1.1,
         color: '#1a1a1a',
-        fontFamily: `"${font.name}", sans-serif`,
+        fontFamily: `"${font.name}", "${font.displayName || font.name}", sans-serif`,
         wordBreak: 'break-word',
       }}>
-        {font.name}
+        {font.displayName || font.name}
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>

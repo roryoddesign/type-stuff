@@ -96,15 +96,50 @@ async function fetchText(url, timeout = 8000) {
 }
 
 function cleanFontName(name) {
-  return name.replace(/['"]/g, '').trim();
+  return name
+    .replace(/['"]/g, '')
+    .replace(/\s*!\s*important\b.*$/i, '')
+    .trim();
 }
 
+function prettyName(name) {
+  if (!name) return name;
+  return name
+    .replace(/[-_]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')          // camelCase boundary
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')    // SFMono → SF Mono
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map(w => (w.length ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(' ');
+}
+
+// Generic CSS keywords and var() leftovers we should never treat as fonts.
 const SKIP = new Set([
-  'inherit', 'initial', 'unset', 'revert', 'none',
+  'inherit', 'initial', 'unset', 'revert', 'revert-layer', 'none',
   'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy',
-  'system-ui', '-apple-system', 'BlinkMacSystemFont',
-  'ui-sans-serif', 'ui-serif', 'ui-monospace',
+  'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded',
+  'math', 'emoji', 'fangsong',
   'var', 'env',
+]);
+
+// Common system / fallback fonts that appear in CSS stacks but typically
+// aren't the site's actual chosen typeface. Kept only if the same family
+// is also loaded as a webfont.
+const SYSTEM_FALLBACKS = new Set([
+  '-apple-system', 'blinkmacsystemfont', 'sans',
+  'helvetica', 'helvetica neue', 'arial', 'arial unicode ms',
+  'roboto', 'segoe ui', 'segoe ui symbol', 'segoe ui historic',
+  'oxygen', 'ubuntu', 'cantarell', 'fira sans', 'droid sans',
+  'apple color emoji', 'segoe ui emoji', 'noto color emoji',
+  'twemoji mozilla', 'emojione', 'android emoji',
+  'sfmono-regular', 'sf mono', 'sf pro display', 'sf pro text',
+  'menlo', 'monaco', 'consolas', 'liberation mono', 'courier new',
+  'courier', 'dejavu sans mono', 'andale mono', 'lucida console',
+  'times new roman', 'times', 'georgia',
+  'verdana', 'tahoma', 'lucida grande', 'lucida sans',
+  'noto sans', 'noto serif',
 ]);
 
 function extractFonts(html, css) {
@@ -113,8 +148,10 @@ function extractFonts(html, css) {
   const add = (name, source) => {
     const clean = cleanFontName(name);
     if (!clean || clean.length < 2) return;
-    if (SKIP.has(clean.toLowerCase())) return;
-    if (clean.startsWith('-') || clean.startsWith('var(')) return;
+    const lower = clean.toLowerCase();
+    if (SKIP.has(lower)) return;
+    if (clean.startsWith('-') && lower !== '-apple-system') return;
+    if (clean.includes('(') || clean.includes(')')) return; // var(...), calc(...), etc.
     if (!fonts.has(clean)) fonts.set(clean, { name: clean, sources: [] });
     const entry = fonts.get(clean);
     if (!entry.sources.includes(source)) entry.sources.push(source);
@@ -129,11 +166,6 @@ function extractFonts(html, css) {
         add(entry.split(':')[0].replace(/\+/g, ' '), 'Google Fonts');
       });
     }
-  }
-
-  // Adobe Fonts / Typekit
-  if (/use\.typekit\.net\/[a-z0-9]+/.test(html + css)) {
-    add('Adobe Fonts (Typekit)', 'Adobe Fonts');
   }
 
   // @font-face blocks
@@ -159,5 +191,11 @@ function extractFonts(html, css) {
     im[1].split(',').forEach(f => add(f.trim(), 'Inline'));
   }
 
-  return Array.from(fonts.values());
+  // Drop pure system-fallback entries that aren't actually loaded as webfonts.
+  const list = Array.from(fonts.values()).filter(f => {
+    if (!SYSTEM_FALLBACKS.has(f.name.toLowerCase())) return true;
+    return f.sources.some(s => s === '@font-face' || s === 'Google Fonts' || s === 'Adobe Fonts');
+  });
+
+  return list.map(f => ({ ...f, displayName: prettyName(f.name) }));
 }
